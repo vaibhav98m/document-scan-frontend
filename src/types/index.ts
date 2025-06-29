@@ -16,16 +16,19 @@ export interface DocumentSummary {
   generatedAt: Date;
   keyPoints: string[];
   wordCount: number;
-  readingTime: number;
+  readingTime:  number;
 }
 
 export interface QueryResponse {
   id: string;
   documentId: string;
+  fileName: string;
   question: string;
   answer: string;
   timestamp: Date;
   confidence?: number;
+  language?: string;
+  audioUrl?: string;
 }
 
 export interface KeyInsight {
@@ -54,8 +57,8 @@ export interface KeyInsight {
   content: string;
   relevance: number;
   context?: string;
-  category?: string; // Flexible category based on document content
-  tags?: string[]; // Additional tags for better organization
+  category?: string;
+  tags?: string[];
 }
 
 export interface DocumentInsights {

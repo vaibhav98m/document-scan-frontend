@@ -10,7 +10,7 @@ import {
 } from "@/types";
 
 const API_BASE =
-  import.meta.env.VITE_BACKEND_BASE_URL || "http://localhost:8080/api";
+  import.meta.env.VITE_BACKEND_BASE_URL || "http://localhost:8081/api";
 
 class ApiService {
   private async request<T>(
@@ -28,8 +28,8 @@ class ApiService {
 
       const result = await response.json();
 
-      // Handle the new API response format
       if (!response.ok || result.status === "failed") {
+        console.error(`API request failed for ${endpoint}:`, result);
         return {
           status: "failed",
           message: result.message || "An error occurred",
@@ -45,6 +45,7 @@ class ApiService {
         data: result.data,
       };
     } catch (error) {
+      console.error(`API request error for ${endpoint}:`, error);
       return {
         status: "failed",
         message: "Network error",
@@ -67,6 +68,7 @@ class ApiService {
       const result = await response.json();
 
       if (!response.ok || result.status === "failed") {
+        console.error("Upload document failed:", result);
         return {
           status: "failed",
           message: result.message || "Upload failed",
@@ -82,6 +84,7 @@ class ApiService {
         data: result.data,
       };
     } catch (error) {
+      console.error("Upload document error:", error);
       return {
         status: "failed",
         message: "Upload failed",
@@ -91,21 +94,76 @@ class ApiService {
     }
   }
 
-  async generateSummary(
-    documentId: string,
-  ): Promise<ApiResponse<DocumentSummary>> {
-    return this.request<DocumentSummary>(`/documents/${documentId}/summary`, {
-      method: "POST",
-    });
+  async generateAzureTTSAudio(text: string, language: string): Promise<ApiResponse<{ audioUrl: string }>> {
+    console.log("Calling Spring Boot TTS endpoint for text:", text, "Language:", language);
+    try {
+      const response = await fetch(`${API_BASE}/tts/generate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text, language }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const audioBlob = new Blob([await response.arrayBuffer()], { type: "audio/mpeg" });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      console.log("TTS response received: Audio URL generated:", audioUrl);
+      return {
+        status: "success",
+        message: "Audio generated successfully",
+        error: null,
+        data: { audioUrl },
+      };
+    } catch (error) {
+      console.error("TTS request error:", error);
+      return {
+        status: "failed",
+        message: "Failed to generate audio",
+        error: error instanceof Error ? error.message : "TTS request failed",
+        data: null,
+      };
+    }
   }
 
   async queryDocument(
     documentId: string,
     question: string,
+    language: string,
   ): Promise<ApiResponse<QueryResponse>> {
-    return this.request<QueryResponse>(`/documents/${documentId}/query`, {
+    console.log("Querying document:", { documentId, question, language });
+    const queryResponse = await this.request<QueryResponse>(`/documents/query`, {
       method: "POST",
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ documentId, question, language }),
+    });
+
+    if (queryResponse.status === "success" && queryResponse.data) {
+      console.log("Query response received:", queryResponse.data);
+      // Generate audio for the response
+      const audioResponse = await this.generateAzureTTSAudio(queryResponse.data.answer, language);
+      if (audioResponse.status === "success" && audioResponse.data) {
+        queryResponse.data.audioUrl = audioResponse.data.audioUrl;
+        console.log("Audio URL generated:", queryResponse.data.audioUrl);
+      } else {
+        console.error("Failed to generate audio for query response:", audioResponse);
+        queryResponse.data.audioUrl = null;
+      }
+      queryResponse.data.language = language;
+    } else {
+      console.error("Query document failed:", queryResponse);
+    }
+
+    return queryResponse;
+  }
+
+  async generateSummary(
+    documentId: string,
+  ): Promise<ApiResponse<DocumentSummary>> {
+    return this.request<DocumentSummary>(`/documents/${documentId}/summary`, {
+      method: "POST",
     });
   }
 
@@ -160,6 +218,7 @@ class ApiService {
       const response = await fetch(`${API_BASE}/reports/${reportId}/download`);
 
       if (!response.ok) {
+        console.error("Download report failed:", response.status);
         return {
           status: "failed",
           message: "Failed to download report",
@@ -176,6 +235,7 @@ class ApiService {
         data: blob,
       };
     } catch (error) {
+      console.error("Download report error:", error);
       return {
         status: "failed",
         message: "Download failed",
